@@ -1,1 +1,20 @@
+name: Test Artifact Parser
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-parse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GKI
+          path: artifacts
+
+      - name: Parse file
+        run: |
+          GKI_FILE=$(find artifacts -maxdepth 1 -name "GKI-*.zip" -print -quit)
+          echo "Found: $GKI_FILE"
 
