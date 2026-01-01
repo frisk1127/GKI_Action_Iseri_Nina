@@ -198,4 +198,171 @@ jobs:
           elif [ "$BR" == "Dev(开发)" ]; then
              if [[ "$VAR" == "SukiSU" || "$VAR" == "ReSukiSU" ]]; then ARG="-s tmp-builtin"; else ARG="-s main"; fi
           fi
-          echo "KSU_ARGS=$A
+          echo "KSU_ARGS=$ARG" >> $GITHUB_ENV
+
+      - name: 注入 KernelSU
+        run: |
+          cd "$CONFIG"
+          case "${{ inputs.kernelsu_variant }}" in
+            "Official") URL="https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" ;;
+            "ReSukiSU") URL="https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" ;;
+            "MKSU")     URL="https://raw.githubusercontent.com/5ec1cff/KernelSU/main/kernel/setup.sh" ;;
+            "SukiSU")   URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" ;;
+          esac
+          curl -LSs "$URL" | bash -s ${{ env.KSU_ARGS }}
+
+      - name: 注入 SUSFS
+        if: ${{ !inputs.cancel_susfs }}
+        run: |
+          set -e
+          cd "$CONFIG"
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
+          cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+
+          KSU_DIR=$(find . -maxdepth 1 -type d -name "KernelSU*" | head -n 1)
+          if [ -n "$KSU_DIR" ]; then
+            cd "$KSU_DIR"
+            cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
+            patch -p1 --fuzz=3 --forward < 10_enable_susfs_for_ksu.patch || echo "KSU Patch warning"
+            cd ..
+          fi
+          cd common
+          patch -p1 --fuzz=3 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+
+      - name: 注入 ZRAM/BBG 补丁
+        run: |
+          cd "$CONFIG/common"
+          patch -p1 --forward < "../../Action-Build/patches/optimized_mem_operations.patch"
+          patch -p1 --forward < "../../Action-Build/patches/file_struct_8bytes_align.patch"
+          
+          if [ "${{ inputs.use_zram }}" == "true" ]; then
+            rm -f lib/lz4/*
+            cp -r ../../zzh_patch/zram/lz4/* ./lib/lz4/
+            cp -r ../../zzh_patch/zram/include/linux/* ./include/linux/
+            cp ../../zzh_patch/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch ./
+            patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch || true
+            cp ../../zzh_patch/zram/${{ env.KERNEL_VERSION }}/lz4kd.patch ./
+            patch -p1 -F 3 < lz4kd.patch || true
+          fi
+          
+          if [ "${{ inputs.use_bbg }}" == "true" ]; then
+            cd ..
+            wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+            sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' common/security/Kconfig
+          fi
+
+      - name: 配置 Defconfig
+        run: |
+          cd "$CONFIG"
+          DEFCONFIG="common/arch/arm64/configs/gki_defconfig"
+          echo "CONFIG_KSU=y" >> $DEFCONFIG
+          echo "CONFIG_WERROR=n" >> $DEFCONFIG
+          if [[ "${{ inputs.kernelsu_variant }}" == *"SukiSU"* ]] && [[ "${{ inputs.use_kpm }}" == "true" ]]; then
+             echo "CONFIG_KPM=y" >> $DEFCONFIG
+          fi
+          if [ "${{ inputs.use_zram }}" == "true" ]; then
+             echo "CONFIG_ZSMALLOC=y" >> $DEFCONFIG
+             echo "CONFIG_ZRAM=y" >> $DEFCONFIG
+             echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_LZ4K=y" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> $DEFCONFIG
+          fi
+          if [ "${{ inputs.use_bbg }}" == "true" ]; then echo "CONFIG_BBG=y" >> $DEFCONFIG; fi
+          if [ "${{ inputs.cancel_susfs }}" == "false" ]; then
+             echo "CONFIG_KSU_SUSFS=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> $DEFCONFIG
+             echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> $DEFCONFIG
+          fi
+          sed -i 's/check_defconfig//g' common/build.config.gki*
+
+      # ========================================================
+      # [已恢复] 3. 应用构建时间和自定义版本名
+      # ========================================================
+      - name: 设置构建时间与版本
+        run: |
+          cd "$CONFIG"
+          # 处理构建时间
+          if [ -n "${{ inputs.build_time }}" ]; then
+             echo "正在设置构建时间: ${{ inputs.build_time }}"
+             # 更新 mkcompile_h 脚本以固定时间
+             perl -pi -e "s{UTS_VERSION=\"\\\$\(echo \\\$UTS_VERSION \\\$CONFIG_FLAGS \\\$TIMESTAMP \\| cut -b -\\\$UTS_LEN\)\"}{UTS_VERSION=\"#1 SMP PREEMPT ${{ inputs.build_time }}\"}" ./common/scripts/mkcompile_h
+          fi
+          
+          # 处理自定义版本名 (Localversion)
+          if [ -n "${{ inputs.version }}" ]; then
+             echo "正在设置版本后缀: ${{ inputs.version }}"
+             sed -i '/^CONFIG_LOCALVERSION=/ s/="\([^"]*\)"/="${{ inputs.version }}"/' common/arch/arm64/configs/gki_defconfig
+          fi
+
+      - name: 编译内核
+        run: |
+          cd "$CONFIG"
+          sed -i 's/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
+          sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
+          sed -i '/KMI_SYMBOL_LIST_STRICT_MODE/d' ./common/build.config.gki.aarch64
+          
+          echo "开始编译..."
+          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
+
+      - name: KPM Patch & AnyKernel3
+        run: |
+           if [[ "${{ inputs.use_kpm }}" == "true" ]] && [[ "${{ inputs.kernelsu_variant }}" == *"SukiSU"* ]]; then
+             cd "$CONFIG/out/${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}/dist"
+             curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
+             chmod 777 patch
+             ./patch
+             rm -rf Image && mv oImage Image
+             cd ../../../..
+           fi
+           
+           cd AnyKernel3
+           cp ../$CONFIG/out/${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}/dist/Image ./
+           ZIP_NAME="GKI-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}-${{ inputs.kernelsu_variant }}.zip"
+           zip -r "$ZIP_NAME" ./*
+           echo "ZIP_PATH=$GITHUB_WORKSPACE/AnyKernel3/$ZIP_NAME" >> $GITHUB_ENV
+
+      - name: 编译 Boot.img
+        if: ${{ inputs.onlyAk3 == false }}
+        run: |
+          cd "$CONFIG/out/${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}/dist"
+          mkdir bootimgs && cd bootimgs
+          cp ../Image ./
+          
+          GKI_URL="https://dl.google.com/android/gki/gki-certified-boot-android12-5.10-${{ env.OS_PATCH_LEVEL }}_${{ env.REVISION }}.zip"
+          
+          echo "下载官方 Boot: $GKI_URL"
+          if curl --output /dev/null --silent --head --fail "$GKI_URL"; then
+             curl -Lo gki.zip "$GKI_URL"
+          else
+             echo "错误: Google服务器上找不到该版本的 Boot 镜像，尝试使用 Fallback (2023-01)..."
+             curl -Lo gki.zip "https://dl.google.com/android/gki/gki-certified-boot-android12-5.10-2023-01_r1.zip"
+          fi
+          
+          unzip gki.zip && rm gki.zip
+          $UNPACK_BOOTIMG --boot_img=boot-5.10.img
+          
+          gzip -n -k -f -9 ./Image > ./Image.gz
+          
+          $MKBOOTIMG --header_version 4 --kernel Image.gz --output boot-new.img --ramdisk out/ramdisk --os_version 12.0.0 --os_patch_level "${{ env.OS_PATCH_LEVEL }}"
+          $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-new.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
+          
+          mv boot-new.img $GITHUB_WORKSPACE/boot.img
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}
+          path: |
+            ${{ env.ZIP_PATH }}
+            *.img
