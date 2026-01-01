@@ -398,7 +398,7 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}
+          name: Kernel_Build_Output
           path: |
             ${{ env.ZIP_PATH }}
             *.img
