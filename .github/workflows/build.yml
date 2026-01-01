@@ -366,10 +366,7 @@ jobs:
            cp ../$CONFIG/out/${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}/dist/Image ./
            ZIP_NAME="GKI-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}-${{ inputs.kernelsu_variant }}.zip"
            zip -r "$ZIP_NAME" ./*
-           
-           # 移动到工作区根目录
-           zip -r "../$ZIP_NAME" ./*
-           echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+           echo "ZIP_PATH=$GITHUB_WORKSPACE/AnyKernel3/$ZIP_NAME" >> $GITHUB_ENV
 
       - name: 编译 Boot.img
         if: ${{ inputs.onlyAk3 == false }}
@@ -401,8 +398,8 @@ jobs:
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: "GKI-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}-${{ inputs.kernelsu_variant }}.zip"
+          name: Kernel-${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}
           path: |
-            ${{ github.workspace }}/GKI-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.${{ env.SUB_LEVEL }}-${{ env.OS_PATCH_LEVEL }}-${{ inputs.kernelsu_variant }}.zip
+            ${{ env.ZIP_PATH }}
             *.img
 
