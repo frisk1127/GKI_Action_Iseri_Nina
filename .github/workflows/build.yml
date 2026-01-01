@@ -71,7 +71,12 @@ on:
         type: boolean
         default: true
       enable_tmpfs:
-       description: '启用tmpfs?'
+        description: '启用tmpfs?'
+        required: true
+        type: boolean
+        default: true
+      bypass_unicode:
+        description: '启用零宽空格修复?'
         required: true
         type: boolean
         default: true
@@ -157,12 +162,13 @@ jobs:
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 > ./kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem
           echo "BOOT_SIGN_KEY_PATH=$GITHUB_WORKSPACE/kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem" >> $GITHUB_ENV
 
-      - name: 克隆辅助仓库
+      - name: 克隆patch仓库
         run: |
           git clone https://github.com/WildPlusKernel/AnyKernel3.git -b "gki-2.0"
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patch
           git clone https://github.com/Numbersf/Action-Build.git --depth=1
+          git clone https://github.com/Xiaomichael/kernel_patches.git xiaoxiaow_patch
           
           if [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ] || [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
             git clone https://github.com/ShirkNeko/susfs4ksu.git -b "gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
@@ -268,6 +274,14 @@ jobs:
             cd ..
             wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
             sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' common/security/Kconfig
+          fi
+
+      - name: 绕过零宽空格检测
+        run: |
+          cd "$CONFIG/common"
+          if [ "${{ inputs.bypass_unicode }}" == "true" ]; then
+          cp ../../xiaoxiaow_patch/common/unicode_bypass_fix_6.1-.patch ./
+          patch -p1 -F 3 --fuzz=5 < unicode_bypass_fix_6.1-.patch || true
           fi
 
       - name: 配置 Defconfig
