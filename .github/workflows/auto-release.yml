@@ -1,1 +1,83 @@
+name: Auto Release GKI Kernel
+
+on:
+  workflow_run:
+    workflows: ["Build GKI A12-5.10"]
+    types:
+      - completed
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+
+      # 1️⃣ 下载 build workflow 的 artifact
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      # 2️⃣ 设置版本变量（从 artifact 文件名解析）
+      - name: 设置版本变量
+        id: version
+        run: |
+          # 找到 GKI zip 文件
+          GKI_FILE=$(ls ./artifacts/GKI-*.zip | head -n1)
+          if [[ -z "$GKI_FILE" ]]; then
+            echo "找不到 GKI zip 文件，退出"
+            exit 1
+          fi
+          echo "GKI_FILE=$GKI_FILE" >> $GITHUB_ENV
+
+          # 文件名示例: GKI-android12-5.10.233-2025-02-ReSukiSU.zip
+          BASENAME=$(basename "$GKI_FILE" .zip)
+          ANDROID_VER=$(echo $BASENAME | cut -d- -f2)
+          KERNEL_VER=$(echo $BASENAME | cut -d- -f3)
+          SUB_LEVEL=$(echo $BASENAME | cut -d. -f3)
+          OS_PATCH=$(echo $BASENAME | cut -d- -f4)
+          VARIANT=$(echo $BASENAME | cut -d- -f5)
+          BUILD_TIME=$(date +"%Y-%m-%d %H:%M:%S")
+
+          echo "ANDROID_VER=$ANDROID_VER" >> $GITHUB_ENV
+          echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV
+          echo "SUB_LEVEL=$SUB_LEVEL" >> $GITHUB_ENV
+          echo "OS_PATCH=$OS_PATCH" >> $GITHUB_ENV
+          echo "VARIANT=$VARIANT" >> $GITHUB_ENV
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_ENV
+
+      # 3️⃣ 创建 Release
+      - name: 创建 GitHub Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "GKI-${{ env.KERNEL_VER }}-${{ env.OS_PATCH }}-${{ env.VARIANT }}"
+          name: "GKI Kernel ${ env.KERNEL_VER }-${{ env.OS_PATCH }}-${{ env.VARIANT }}"
+          body: |
+            自动发布 GKI 内核产物
+
+            - Android Version: ${{ env.ANDROID_VER }}
+            - Kernel Version: ${{ env.KERNEL_VER }}
+            - Sub Level: ${{ env.SUB_LEVEL }}
+            - OS Patch Level: ${{ env.OS_PATCH }}
+            - KernelSU Variant: ${{ env.VARIANT }}
+            - Build Time: ${{ env.BUILD_TIME }}
+          draft: false
+          prerelease: false
+          overwrite: true  # 覆盖已有同名 release
+
+      # 4️⃣ 上传 GKI zip + boot.img（如果存在）
+      - name: 上传 Release 资产
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/GKI-*.zip
+            ./artifacts/boot.img
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5️⃣ 输出 Release URL
+      - name: 输出 Release URL
+        run: |
+          echo "Release URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/GKI-${{ env.KERNEL_VER }}-${{ env.OS_PATCH }}-${{ env.VARIANT }}"
 
