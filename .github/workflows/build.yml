@@ -299,6 +299,11 @@ jobs:
              echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> $DEFCONFIG
              echo "CONFIG_CRYPTO_LZ4K=y" >> $DEFCONFIG
              echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_842=y" >> $DEFCONFIG
+             echo "CONFIG_MODULE_SIG=n" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_LZO=y" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_LZ4HC=y" >> $DEFCONFIG
+             echo "CONFIG_CRYPTO_LZ4KD=y" >> $DEFCONFIG
           fi
           if [ "${{ inputs.use_bbg }}" == "true" ]; then echo "CONFIG_BBG=y" >> $DEFCONFIG; fi
           if [ "${{ inputs.enable_tmpfs }}" == "true" ]; then 
