@@ -415,7 +415,7 @@ jobs:
           - **Revision:** ${{ env.REVISION }}
           - **KernelSU 变体:** ${{ inputs.kernelsu_variant }}
           - **KSU 分支:** ${{ inputs.kernelsu_branch }}
-          - **SUSFS:** ${{ inputs.cancel_susfs == 'false' && 'Enabled' || 'Disabled' }}
+          - **SUSFS:** ${{ !inputs.cancel_susfs && 'Enabled' || 'Disabled' }}
           - **ZRAM 算法:** ${{ inputs.use_zram }}
           - **KPM:** ${{ inputs.use_kpm }}
           - **TMPFS:** ${{ inputs.enable_tmpfs }}
