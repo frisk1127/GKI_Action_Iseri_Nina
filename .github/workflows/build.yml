@@ -90,6 +90,11 @@ on:
         required: true
         type: boolean
         default: false
+      resukisu_multi_manager:
+        description: '添加ReSukiSU管理器适配'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build-kernel:
@@ -319,9 +324,10 @@ jobs:
              echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> $DEFCONFIG
              echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> $DEFCONFIG
           fi
-          if [[ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]]; then
+          if [[ "${{ inputs.resukisu_multi_manager }}" == "true" ]]; then
           echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> $DEFCONFIG
           fi
+          
           sed -i 's/check_defconfig//g' common/build.config.gki*
 
       - name: 设置构建时间与版本
