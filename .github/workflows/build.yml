@@ -247,21 +247,20 @@ jobs:
           
           if [ "${{ inputs.use_zram }}" == "true" ]; then
             echo "Processing ZRAM/LZ4K..."
-            # 1. [修复] 复制 LZ4K 和 OPlus 源代码
-            # 这些文件对于 lz4kd.patch 生效是必须的
+            # 复制 LZ4K 和 oplus 源代码
             cp -r ../../SukiSU_patch/other/zram/lz4k/include/linux/* ./include/linux/
             cp -r ../../SukiSU_patch/other/zram/lz4k/lib/* ./lib/
             cp -r ../../SukiSU_patch/other/zram/lz4k/crypto/* ./crypto/
             cp -r ../../SukiSU_patch/other/zram/lz4k_oplus ./lib/
 
-            # 2. 应用 LZ4 1.10.0 (From zzh_patch)
+            # 应用 LZ4 1.10.0 patch
             rm -f lib/lz4/*
             cp -r ../../zzh_patch/zram/lz4/* ./lib/lz4/
             cp -r ../../zzh_patch/zram/include/linux/* ./include/linux/
             cp ../../zzh_patch/zram/${{ env.KERNEL_VERSION }}/lz4_1.10.0.patch ./
             patch -p1 -F 3 --fuzz=5 < lz4_1.10.0.patch || true
             
-            # 3. 应用 LZ4KD & OPlus patches
+            # 应用 LZ4KD & oplus patches
             cp ../../SukiSU_patch/other/zram/zram_patch/${{ env.KERNEL_VERSION }}/lz4kd.patch ./
             patch -p1 -F 3 < lz4kd.patch || true
             
